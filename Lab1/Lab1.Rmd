@@ -1,0 +1,382 @@
+---
+title: "Lab 1 - Visualization"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_width: 7.5
+    fig_height: 5
+---
+
+## Assignment 1
+<embed src="tree_edited.pdf" type="application/pdf" width=1150 height=850>
+
+## Assignment 2
+```{r include=FALSE}
+# Setup ####
+library(ggplot2)
+library(tibble)
+library(gridExtra)
+library(ggpubr)
+library(plotly)
+library(shiny)
+library(gridExtra)
+
+# Assignment 1 ####
+SENIC <- read.table("SENIC.txt")
+colnames(SENIC)[1] <- c("ID")
+colnames(SENIC)[2:12] <- paste('X', 1:11, sep='')
+```
+
+
+
+```{r include=FALSE}
+# Assignment 2 ####
+find_outliers <- function(X){
+  qunts <- quantile(X, probs = c(0.25, 0.75))
+  Q1 <- qunts[[1]]
+  Q3 <- qunts[[2]]
+  output <- X[X>Q3+1.5*(Q3-Q1) | X<Q1-1.5*(Q3-Q1)]
+  return(output)
+}
+```
+
+
+
+```{r echo=FALSE}
+# Assignment 3 ####
+outliers_X3 <- data.frame(x=find_outliers(SENIC$X3), y=0)
+plot_3 <- ggplot(SENIC, aes(x=X3)) +
+  geom_density() + theme_bw() + 
+  labs(y="Density",
+       x="Infection risk") +
+  geom_point(data = outliers_X3, aes(x,y), shape = 5) +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size=11))
+plot_3
+```
+
+The density plot shows the distribution of the variable *Infection Risk*. Observations greater than $Q3+1.5(Q3-Q1)$ or less than $Q1-1.5(Q3-Q1)$ were classified as an outlier and are marked in the plot with a diamond symbol. The most common *Infection Risk* is about 4.5, and the density peaked at around 0.35. About five outliers were apparent, whereas three were over the upper boundary, and two were on the lower boundary. 
+
+
+
+```{r echo=FALSE}
+# Assignment 4 ####
+# Function to plot variables X1:X6, X9:X11
+plot_function <- function(var){
+  # Name of variables
+  var_names <- c("Length of Stay", "Age", "Infection Risk ",
+                 "Routine Culturing Ratio", "Routine Chest X-ray Ratio",
+                 "Number of Beds", "Average Daily Census",
+                 "Number of Nurses", "Available Facilities & Services")
+  
+  # Finding outliers
+  outliers <- find_outliers(SENIC[[var]])
+  
+  # Creating the plot
+  plot <- ggplot(SENIC, aes_string(var)) +
+    geom_density() + theme_bw() + 
+    labs(y="Density",
+         x=var_names[which(vars==var)]) +
+    theme(axis.text = element_text(size=10),
+          axis.title = element_text(size=11)
+    )
+  # If outliers exists
+  if (length(outliers)>0){
+    outliers_df <- data.frame(x = find_outliers(SENIC[[var]]), y=0)
+    plot <- plot + geom_point(data = outliers_df, aes(x,y), shape = 5)
+  }
+  # Returing the plot
+  return(plot)
+}
+
+# Variables to plot
+vars <- c(paste('X',1:6,sep=''), paste('X',9:11,sep=''))
+
+# Creating the plots
+for (i in 1:length(vars)) {
+  var <- vars[i]
+  name <- paste0("dist_plot_",var)
+  assign(name, plot_function(var))
+}
+
+# Plotting the plots (9) in 1 plot
+ggarrange(dist_plot_X1, dist_plot_X2, dist_plot_X3,
+          dist_plot_X4, dist_plot_X5, dist_plot_X6,
+          dist_plot_X9, dist_plot_X10, dist_plot_X11,
+          ncol=3,nrow=3)
+
+```
+
+The figure above shows the density plots for all the quantitative variables in the data. Outliers are again marked with a diamond symbol. The distributions of *Length of Stay, Routine Culturing Ratio, Average Daily Census, Number of Nurses* and *Number of Beds* have a similar shape with a right skewness and upper bound outliers. On the other hand, figures for *Age, Infection Risk, Routine Chest X-ray Ratio* and *Available Facilities & Services* are approximately normally distributed. In these figures, *Age* and *Infection Risk* have upper and lower bound outliers. The *Routine Chest X-ray Ratio* has only upper bound outliers and the *Available Facilities & Services* has no outliers. When comparing the nine graphs, it's important to remember that the differences in y and x scales will affect how the distributions appear.
+
+
+```{r echo=FALSE}
+# Assignment 5 ####
+ggplot(SENIC, aes(x=X3, y=X10, color=X6)) +
+  geom_point() + theme_bw() +
+  labs(y="Number of Nurses",
+       x="Infection risk",
+       color="Number of beds") +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15),
+        legend.title= element_text(size = 12),
+        legend.text = element_text(size=11))
+```
+
+On the scatter plot, the y-scale represents the *Number of nurses*, the x-scale represents the *Infection risk*, and the color of the points represents the *Number of beds*. Compared to the density plot of *Infection risk*, this scatterplot shows multiple variables and their dependence. When the *Infection risk* increases the *Number of nurses* also increases. There also seems to be a correlation between the *Numer of nurses* and the *Number of beds* since hospitals with more nurses also tend to have a larger amount of beds. Unfortunately, the point color scheme makes it hard to read the amount of *Numer of beds*. A possible solution for this problem could be to create an interactive plot to simplify the user analysis, where the users can see the values of the *Number of Beds* when hovering over the plot. Another solution for this problem could be to let both the size and color of the points represent the *Numbers of beds* as well, as it may be easier for the reader to read the amount.
+
+
+```{r echo=FALSE}
+# Assignment 6 ####
+ggplotly(plot_3)
+```
+
+*Infection risk* density plot has now been made interactive with Plotly. This allows the user to make a more precise analysis of the graph. For example, it is now possible to hover the mouse over the plot to see the exact coordinates and outliers as they are also presented. By analyzing the figure it can be found that the observed points were between 1.3 to 7.8. The outliers can be found at 1.3, 1.4, 7.6, 7.7, and 7.8. The precise number of density peaks is at around 0.35551435 and it is at 4,441879 on the x-axis. Other features like zooming and changing the graph window are now also possible.
+
+
+```{r echo=FALSE}
+# Assignment 7 ####
+# Outlier data.frame
+outliers_df <- data.frame(x=find_outliers(SENIC$X3),
+                          y=0)
+# Creating the plot
+SENIC %>% plot_ly(x=~X3) %>%
+  add_histogram() %>% 
+  layout(yaxis = list(title = "Frequency"),
+         xaxis = list(title = "Infection risk")) %>%
+  add_markers(data = outliers_df,
+              x = ~x,
+              y = ~y,
+              marker = list(symbol = "diamond"),
+              showlegend = F)
+```
+
+The figure above shows a histogram of *Infection risk*, outliers are again marked with a diamond symbol. The plot is created using **Plotly** code directly.
+
+
+```{r eval=FALSE}
+# Assignment 8 ####
+# Name of variables
+var_names <- c("Length of Stay", "Age", "Infection Risk ",
+               "Routine Culturing Ratio", "Routine Chest X-ray Ratio",
+               "Number of Beds", "Average Daily Census",
+               "Number of Nurses", "Available Facilities & Services")
+
+plot_function2 <- function(var, ws){
+  # Finding outliers
+  outliers <- find_outliers(SENIC[[var]])
+  
+  # Creating the plot
+  plot <- ggplot(SENIC, aes_string(var)) +
+    geom_density(bw=ws) + theme_bw() + 
+    labs(y="Density",
+         x=var_names[which(vars==var)]) +
+    theme(axis.text = element_text(size=10),
+          axis.title = element_text(size=12)
+    )
+  # If outliers exists
+  if (length(outliers)>0){
+    outliers_df <- data.frame(x = find_outliers(SENIC[[var]]), y=0)
+    plot <- plot + geom_point(data = outliers_df, aes(x,y), shape = 5)
+  }
+  # Returing the plot
+  return(plot)
+}
+
+ui <- fluidPage(
+  checkboxGroupInput(inputId = "variable", label = strong("Variable"),
+              choices = var_names,
+              selected = "Length of Stay"),
+  sliderInput(inputId="ws", label="Choose bandwidth size", value=2, min=0.1, max=60),
+  plotOutput("histPlot")
+)
+
+server <- function(input, output) {
+  output$histPlot <- renderPlot({
+    var <- vars[which(var_names %in% input$variable)]
+    
+    plot_list <- list()
+    plot_list <- lapply(var, plot_function2,ws=input$ws)
+    grod <- arrangeGrob(grobs=plot_list)
+    plot(grod)
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+```
+
+
+The code above creates a Shiny app that can produce density plots of any wished quantitative variable in the data by marking the checkboxes. It is also possible to adjust the bandwidth parameter by changing the slider. As the bandwidth gets larger the plot gets smoother, and as the bandwidth gets smaller, the plot looks more like the actual data.
+
+The optimum bandwidth value differs between variables, and since the slider changes the bandwidth for all variables, it is hard to find an optimal value that fits all of them. The distribution of *Length of stay* and *Infection risk* is visible at about 1, *Age* and *Routine culturing ratio* at 4, *Routine Chest X-ray Ratio* and *Available Facilities & Services* at 8, *Number of Beds*, *Number of Nurses* and *Average Daily Census* at 50.
+
+
+## Appendix
+```{r eval=FALSE}
+# Setup ####
+library(ggplot2)
+library(tibble)
+library(gridExtra)
+library(ggpubr)
+library(plotly)
+library(shiny)
+library(gridExtra)
+
+# Assignment 1 ####
+SENIC <- read.table("SENIC.txt")
+colnames(SENIC)[1] <- c("ID")
+colnames(SENIC)[2:12] <- paste('X', 1:11, sep='')
+
+# Assignment 2 ####
+find_outliers <- function(X){
+  qunts <- quantile(X, probs = c(0.25, 0.75))
+  Q1 <- qunts[[1]]
+  Q3 <- qunts[[2]]
+  output <- X[X>Q3+1.5*(Q3-Q1) | X<Q1-1.5*(Q3-Q1)]
+  return(output)
+}
+
+# Assignment 3 ####
+outliers_X3 <- data.frame(x=find_outliers(SENIC$X3), y=0)
+plot_3 <- ggplot(SENIC, aes(x=X3)) +
+  geom_density() + theme_bw() + 
+  labs(y="Density",
+       x="Infection risk") +
+  geom_point(data = outliers_X3, aes(x,y), shape = 5) +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size=11))
+plot_3
+
+
+# Assignment 4 ####
+# Function to plot variables X1:X6, X9:X11
+plot_function <- function(var){
+  # Name of variables
+  var_names <- c("Length of Stay", "Age", "Infection Risk ",
+                 "Routine Culturing Ratio", "Routine Chest X-ray Ratio",
+                 "Number of Beds", "Average Daily Census",
+                 "Number of Nurses", "Available Facilities & Services")
+  
+  # Finding outliers
+  outliers <- find_outliers(SENIC[[var]])
+  
+  # Creating the plot
+  plot <- ggplot(SENIC, aes_string(var)) +
+    geom_density() + theme_bw() + 
+    labs(y="Density",
+         x=var_names[which(vars==var)]) +
+    theme(axis.text = element_text(size=10),
+          axis.title = element_text(size=11)
+    )
+  # If outliers exists
+  if (length(outliers)>0){
+    outliers_df <- data.frame(x = find_outliers(SENIC[[var]]), y=0)
+    plot <- plot + geom_point(data = outliers_df, aes(x,y), shape = 5)
+  }
+  # Returing the plot
+  return(plot)
+}
+
+# Variables to plot
+vars <- c(paste('X',1:6,sep=''), paste('X',9:11,sep=''))
+
+# Creating the plots
+for (i in 1:length(vars)) {
+  var <- vars[i]
+  name <- paste0("dist_plot_",var)
+  assign(name, plot_function(var))
+}
+
+# Plotting the plots (9) in 1 plot
+ggarrange(dist_plot_X1, dist_plot_X2, dist_plot_X3,
+          dist_plot_X4, dist_plot_X5, dist_plot_X6,
+          dist_plot_X9, dist_plot_X10, dist_plot_X11,
+          ncol=3,nrow=3)
+
+
+# Assignment 5 ####
+ggplot(SENIC, aes(x=X3, y=X10, color=X6)) +
+  geom_point() + theme_bw() +
+  labs(y="Number of Nurses",
+       x="Infection risk",
+       color="Number of beds") +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15),
+        legend.title= element_text(size = 12),
+        legend.text = element_text(size=11))
+
+# Assignment 6 ####
+ggplotly(plot_3)
+
+# Assignment 7 ####
+# Outlier data.frame
+outliers_df <- data.frame(x=find_outliers(SENIC$X3),
+                          y=0)
+# Creating the plot
+SENIC %>% plot_ly(x=~X3) %>%
+  add_histogram() %>% 
+  layout(yaxis = list(title = "Frequency"),
+         xaxis = list(title = "Infection risk")) %>%
+  add_markers(data = outliers_df,
+              x = ~x,
+              y = ~y,
+              marker = list(symbol = "diamond"),
+              showlegend = F)
+
+
+# Assignment 8 ####
+# Name of variables
+var_names <- c("Length of Stay", "Age", "Infection Risk ",
+               "Routine Culturing Ratio", "Routine Chest X-ray Ratio",
+               "Number of Beds", "Average Daily Census",
+               "Number of Nurses", "Available Facilities & Services")
+
+plot_function2 <- function(var, ws){
+  # Finding outliers
+  outliers <- find_outliers(SENIC[[var]])
+  
+  # Creating the plot
+  plot <- ggplot(SENIC, aes_string(var)) +
+    geom_density(bw=ws) + theme_bw() + 
+    labs(y="Density",
+         x=var_names[which(vars==var)]) +
+    theme(axis.text = element_text(size=10),
+          axis.title = element_text(size=12)
+    )
+  # If outliers exists
+  if (length(outliers)>0){
+    outliers_df <- data.frame(x = find_outliers(SENIC[[var]]), y=0)
+    plot <- plot + geom_point(data = outliers_df, aes(x,y), shape = 5)
+  }
+  # Returing the plot
+  return(plot)
+}
+
+ui <- fluidPage(
+  checkboxGroupInput(inputId = "variable", label = strong("Variable"),
+              choices = var_names,
+              selected = "Length of Stay"),
+  sliderInput(inputId="ws", label="Choose bandwidth size", value=2, min=0.1, max=60),
+  plotOutput("histPlot")
+)
+
+server <- function(input, output) {
+  output$histPlot <- renderPlot({
+    var <- vars[which(var_names %in% input$variable)]
+    
+    plot_list <- list()
+    plot_list <- lapply(var, plot_function2,ws=input$ws)
+    grod <- arrangeGrob(grobs=plot_list)
+    plot(grod)
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+```
+

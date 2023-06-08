@@ -1,0 +1,341 @@
+---
+title: "Lab 3 - Visualization"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_width: 7.5
+    fig_height: 5
+---
+```{r include=FALSE}
+# Setup ####
+library(plotly)
+library(ggplot2)
+library(dplyr)
+library(MASS)
+library(sf)
+library(stringr)
+library(akima)
+Sys.setenv('MAPBOX_TOKEN' = 'pk.eyJ1IjoiZGFta2U3NTMiLCJhIjoiY2w4MDNpNXhsMDJiOTQ4bndjZTRlZ3UxbSJ9.y1tYcKT8TgWVbo_CCIFzGw')
+```
+
+## Assignment 1
+### 1.1
+```{r echo=FALSE, warning=FALSE}
+# Read the data
+mosquitos <- read.csv(file = 'aegypti_albopictus.csv')
+
+# Create the graph for 2004 data
+p_1 <- mosquitos %>% filter(YEAR == 2004) %>%
+  plot_mapbox(lat = ~Y, lon = ~X,
+              color = ~VECTOR,
+              mode = 'scattermapbox'
+              ) %>% layout(title = list(text="2004"))
+#Plot
+ggplotly(p_1)
+
+# Create the graph for 2013 data
+p_2 <- mosquitos %>% filter(YEAR == 2013) %>%
+  plot_mapbox(lat = ~Y, lon = ~X,
+              color = ~VECTOR,
+              mode = 'scattermapbox') %>% layout(title = list(text="2013"))
+#Plot
+ggplotly(p_2)
+```
+
+The densest part of Aedes aegypti cases is in Brazil, especially in the east part of Brazil where it is hard to see every dot (even when zoomed in) due to overplotting. The cases of Aedes albopictus seem to be most frequent in Taiwan, especially in the south part where overplotting is also a problem. In 2004, Aedes aegypti could be found in many places south of the equator. Nine years later, in 2013 this had changed and it can be almost only found in Brazil where the number of cases heavy increased. Aedes albopictus has decreased in USA during those years and has stayed the same in Taiwan.
+
+Since every dot on the map represents one case of the mosquito, the biggest perception problem is overplotting.
+The user needs to zoom in to clearly see the difference. For example, Taiwan has a lot of cases, but due to the size of the country, it can be hard to instantly identify the cases without zooming in.
+
+### 1.2
+
+```{r echo=FALSE}
+# Stating the graph - World 
+g <- list(
+  projection='Mercator')  
+
+# Creating the graph
+mosquitos %>% group_by(COUNTRY_ID) %>% # Grouping the data into different countries
+ summarise(Z = n()) %>% # Counting how many times each country occur in the data.
+  plot_geo() %>% add_trace(z = ~Z, color =~Z, colors = "Blues", locations =~COUNTRY_ID) %>%
+  layout(geo = g)
+```
+
+It is hard to extract information about the number of mosquito cases in this graph because the color scale is very wide. Since most countries seem to have under 10K cases, the color is very similar between a lot countries. Therefore it is hard to tell the differences in the number of cases between countries. For smaller countries it can be hard to see a difference. Taiwan has most cases, but it requires the reader to zoom in to clearly see the amount of cases. Thereafter it is followed by Brazil and the USA. This figure shows the perception that larger countries have more cases. 
+
+### 1.3 a)
+
+```{r echo=FALSE}
+mosquitos %>% group_by(COUNTRY_ID) %>% summarise(Z = log(n(), 10)) %>% # Using log (base 10) insted
+  plot_geo() %>% add_trace(z = ~Z, color =~Z, colors = "Blues", locations =~COUNTRY_ID) %>%
+  layout(geo = g)
+```
+
+It is easier to diffrance the differance between countries in this graph, which makes it better than 1.2 if the purpose of the plot is to analyze the differences between countries, but if the purpose is to find the number of cases for a country, then 1.2 might be better since this graph requires the reader to transform back the variable in order to get the acctual number of cases. The same size issue as in assignment 1.2 can be found in this figure.
+
+
+### 1.3 b)
+```{r echo=FALSE}
+g_b <- list(
+  projection= list(
+    type = "conic equal area"))
+
+mosquitos %>% group_by(COUNTRY_ID) %>% summarise(Z = log(n(),10)) %>%
+  plot_geo() %>% add_trace(z = ~Z, color =~Z, colors = "Blues", locations =~COUNTRY_ID) %>%
+  layout(geo = g_b)
+```
+
+The big advantage of this graph is that the area of the countries remains the same. The downside is that the angles/shapes changes, this gets worse on the outer ends of the map. The equirectangular projection shown in 1.3 a) remains the angles/shapes but not the area. The most incorrect angle/shape is in the upper and lower part of the map, where the countries look a lot bigger than they actually are.
+
+### 1.4
+
+```{r include=FALSE}
+tmp <- mosquitos %>% filter(YEAR == 2013 & COUNTRY == "Brazil") %>% 
+  mutate(X1 = cut_interval(X, n = 100)) %>% mutate(Y1 = cut_interval(Y, n = 100)) %>%
+  group_by(X1,Y1) %>% summarise(mean_X = mean(X), mean_Y = mean(Y), quantity = n()) %>%
+  plot_mapbox(lat = ~mean_Y, lon = ~mean_X,
+              color = ~quantity,
+              mode = 'scattermapbox')
+```
+
+```{r echo=FALSE}
+ggplotly(tmp)
+```
+
+It is now easier to read the number of cases in the south and east part of Brazil, which is the area with the most cases. The discretization worked well since overplotting is not a problem anymore now that the color of the points represents the quantity. The downside of discretization is that the plotted data is no longer the actual/real data, which is important to remember when interpreting the graph.
+
+## Assignment 2
+### 2.1
+```{r echo=TRUE}
+# Load data to R
+data2 <- read.csv("000000KD_20220913-143142.csv", fileEncoding = "windows-1258")
+# Create age groups
+data2$Age_group[data2$age=="18-29 years"]<-"Young"
+data2$Age_group[data2$age=="30-49 years"]<-"Adult"
+data2$Age_group[data2$age=="50-64 years"]<-"Senior"
+# Facor the age group so the order is correct in the graph
+data2 <- data2 %>% mutate(Age_group=factor(Age_group, levels=c("Young", "Adult", "Senior")))
+# Setting column names in the data
+colnames(data2) <- c("Region", "Type", "Age", "Income", "Age_group")
+```
+
+### 2.2
+```{r echo=FALSE}
+# Violin plot of income distributions for the 3 age groups
+ggplot(data2, aes(x=Age_group, y=Income)) +
+  geom_violin() + theme_bw() +
+  xlab("Age group") + ylab("Mean income (thousands of KR)") +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15))
+```
+
+The plot above shows the mean income of the 3 age groups. The most common mean income for the young group (18-29 yrs) is about 310K, this group has a spread from 300K to 410K. For Adults (30-49 yrs), the most common mean income is about 510K but a few earn as much as 700K. The distribution of Seniors (50-65 yrs) looks a bit similar to the adults and has a spread from 510K to 720K with a most common mean income of 520K. The salary distribution seems to be more even in the senior group compared to the other ones.
+
+### 2.3
+```{r echo=FALSE}
+#Filter values from each column
+data_young <- data2 %>% filter(Age_group=="Young")
+data_adult <- data2 %>% filter(Age_group=="Adult")
+data_senior <- data2 %>% filter(Age_group=="Senior")
+
+#Create new dataframe with Region and values for Age groups.
+x <- data.frame(Region = data_young$Region,
+           Young = data_young$Income,
+           Adult = data_adult$Income,
+           Senior = data_senior$Income)
+
+#Interpolation
+s = interp(x=x$Young,y=x$Adult,z=x$Senior, duplicate = "mean")
+
+#Plot
+plot_ly(x=~s$x,y=~s$y,z=~s$z, type="surface" ) %>% 
+  layout(scene = list(xaxis=list(title = "Young"), yaxis=list(title="Adult"),zaxis=list(title="Senior")))
+
+```
+
+Adult income increases when the senior income increases. The reverse could be found for young age groups, where income for young decreases when senior income increases. This linear trend implies that linear regression is a suitable method to model this dependence.
+
+### 2.4
+```{r include=FALSE, warning=FALSE}
+# Convert region column to corresponding region with the same names as rds.
+text <- substr(data2$Region, 4, stop=nchar(data2$Region)-7)
+text[text=="Örebro"] <- "Orebro"
+data2$Region <- text
+
+# Subsetting data for young and adult
+data2_adult <- data2 %>% filter(Age_group=="Adult")
+data2_young <- data2 %>% filter(Age_group=="Young")
+rds <- readRDS("gadm36_SWE_1_sf.rds")
+
+rds_adult <- rds
+rds_young <- rds
+
+rownames(data2_adult) <- data2_adult$Region
+rownames(data2_young) <- data2_young$Region
+
+# Add income for corresponding region
+rds_adult$Income=data2_adult[rds_adult$NAME_1, "Income"]
+rds_young$Income=data2_young[rds_young$NAME_1, "Income"]
+```
+
+```{r echo=FALSE, message=FALSE}
+# Adults
+plot_ly() %>% add_sf(data=rds_adult, split=~NAME_1, color=~Income, showlegend=F, alpha=1) %>% layout(title = list(text="Adult"))
+```
+
+```{r echo=FALSE, message=FALSE}
+# Young
+plot_ly() %>% add_sf(data=rds_young, split=~NAME_1, color=~Income, showlegend=F, alpha=1) %>% layout(title = list(text="Young"))
+```
+
+These graphs visualize the income distribution of young and adults by their geographical location. This information was not visible in the violin plot. The downside of the choropleth plots is that it is harder to read the income amount due to color interpretation.
+
+By these plots, Stockholm seems to have the highest income in both age groups. Since the colorscale differ between the two age groups, the reader has to be careful when comparaing counties between graphs. In addition, when analyzing these plots, it is important to remember that different factors may impact the results. For example, the highest earnings do not reflect the cost of living, as counties with bigger cities such as Stockholm or Gothenburg have higher earning values jobs but also the highest cost of living.
+
+### 2.5
+
+```{r echo=FALSE, message=FALSE}
+plot_ly() %>% add_sf(data=rds_young, split=~NAME_1, color=~Income,showlegend=F, alpha=1) %>% 
+  add_markers(y = 58.409814, x = 15.624522, name = "Linköping",color = I("red")) %>% layout(title = list(text="Young"))
+```
+
+The red dot in the plot marks Linköping.
+
+### Appendix
+```{r, eval=FALSE}
+# Setup ####
+library(plotly)
+library(ggplot2)
+library(dplyr)
+library(MASS)
+library(sf)
+library(stringr)
+library(akima)
+Sys.setenv('MAPBOX_TOKEN' = 'pk.eyJ1IjoiZGFta2U3NTMiLCJhIjoiY2w4MDNpNXhsMDJiOTQ4bndjZTRlZ3UxbSJ9.y1tYcKT8TgWVbo_CCIFzGw')
+
+
+# 1.1 ####
+# Read the data
+mosquitos <- read.csv(file = 'aegypti_albopictus.csv')
+
+# Create the graph for 2004 data
+p_1 <- mosquitos %>% filter(YEAR == 2004) %>%
+  plot_mapbox(lat = ~Y, lon = ~X,
+              color = ~VECTOR,
+              mode = 'scattermapbox'
+              ) %>% layout(title = list(text="2004"))
+#Plot
+ggplotly(p_1)
+
+# Create the graph for 2013 data
+p_2 <- mosquitos %>% filter(YEAR == 2013) %>%
+  plot_mapbox(lat = ~Y, lon = ~X,
+              color = ~VECTOR,
+              mode = 'scattermapbox') %>% layout(title = list(text="2013"))
+#Plot
+ggplotly(p_2)
+
+
+# 1.2 ####
+# Stating the graph - World 
+g <- list(
+  projection='Mercator')  
+
+# Creating the graph
+mosquitos %>% group_by(COUNTRY_ID) %>% # Grouping the data into different countries
+ summarise(Z = n()) %>% # Counting how many times each country occur in the data.
+  plot_geo() %>% add_trace(z = ~Z, color =~Z, colors = "Blues", locations =~COUNTRY_ID) %>%
+  layout(geo = g)
+
+
+# 1.3 ####
+g_b <- list(
+  projection= list(
+    type = "conic equal area"))
+
+mosquitos %>% group_by(COUNTRY_ID) %>% summarise(Z = log(n(),10)) %>%
+  plot_geo() %>% add_trace(z = ~Z, color =~Z, colors = "Blues", locations =~COUNTRY_ID) %>%
+  layout(geo = g_b)
+
+
+# 1.4 ####
+tmp <- mosquitos %>% filter(YEAR == 2013 & COUNTRY == "Brazil") %>% 
+  mutate(X1 = cut_interval(X, n = 100)) %>% mutate(Y1 = cut_interval(Y, n = 100)) %>%
+  group_by(X1,Y1) %>% summarise(mean_X = mean(X), mean_Y = mean(Y), quantity = n()) %>%
+  plot_mapbox(lat = ~mean_Y, lon = ~mean_X,
+              color = ~quantity,
+              mode = 'scattermapbox')
+ggplotly(tmp)
+
+# 2.1 ####
+# Load data to R
+data2 <- read.csv("000000KD_20220913-143142.csv", fileEncoding = "windows-1258")
+# Create age groups
+data2$Age_group[data2$age=="18-29 years"]<-"Young"
+data2$Age_group[data2$age=="30-49 years"]<-"Adult"
+data2$Age_group[data2$age=="50-64 years"]<-"Senior"
+# Facor the age group so the order is correct in the graph
+data2 <- data2 %>% mutate(Age_group=factor(Age_group, levels=c("Young", "Adult", "Senior")))
+# Setting column names in the data
+colnames(data2) <- c("Region", "Type", "Age", "Income", "Age_group")
+
+# 2.2 ####
+# Violin plot of income distributions for the 3 age groups
+ggplot(data2, aes(x=Age_group, y=Income)) +
+  geom_violin() + theme_bw() +
+  xlab("Age group") + ylab("Mean income (thousands of KR)") +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=15))
+
+# 2.3 ####
+#Filter values from each column
+data_young <- data2 %>% filter(Age_group=="Young")
+data_adult <- data2 %>% filter(Age_group=="Adult")
+data_senior <- data2 %>% filter(Age_group=="Senior")
+
+#Create new dataframe with Region and values for Age groups.
+x <- data.frame(Region = data_young$Region,
+           Young = data_young$Income,
+           Adult = data_adult$Income,
+           Senior = data_senior$Income)
+
+#Interpolation
+s = interp(x=x$Young,y=x$Adult,z=x$Senior, duplicate = "mean")
+
+#Plot
+plot_ly(x=~s$x,y=~s$y,z=~s$z, type="surface" ) %>% 
+  layout(scene = list(xaxis=list(title = "Young"), yaxis=list(title="Adult"),zaxis=list(title="Senior")))
+
+# 2.4 ####
+# Convert region column to corresponding region with the same names as rds.
+text <- substr(data2$Region, 4, stop=nchar(data2$Region)-7)
+text[text=="Örebro"] <- "Orebro"
+data2$Region <- text
+
+# Subsetting data for young and adult
+data2_adult <- data2 %>% filter(Age_group=="Adult")
+data2_young <- data2 %>% filter(Age_group=="Young")
+rds <- readRDS("gadm36_SWE_1_sf.rds")
+
+rds_adult <- rds
+rds_young <- rds
+
+rownames(data2_adult) <- data2_adult$Region
+rownames(data2_young) <- data2_young$Region
+
+# Add income for corresponding region
+rds_adult$Income=data2_adult[rds_adult$NAME_1, "Income"]
+rds_young$Income=data2_young[rds_young$NAME_1, "Income"]
+
+# Adults
+plot_ly() %>% add_sf(data=rds_adult, split=~NAME_1, color=~Income, showlegend=F, alpha=1) %>% layout(title = list(text="Adult"))
+
+# Young
+plot_ly() %>% add_sf(data=rds_young, split=~NAME_1, color=~Income, showlegend=F, alpha=1) %>% layout(title = list(text="Young"))
+
+# 2.5 ####
+plot_ly() %>% add_sf(data=rds_young, split=~NAME_1, color=~Income,showlegend=F, alpha=1) %>% 
+  add_markers(y = 58.409814, x = 15.624522, name = "Linköping",color = I("red")) %>% layout(title = list(text="Young"))
+```
+
+

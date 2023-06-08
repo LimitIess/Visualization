@@ -1,0 +1,614 @@
+---
+title: "Lab 6 - Visualization"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_width: 7.5
+    fig_height: 5
+---
+
+```{r include=FALSE}
+# Setup ####
+# Packages
+library(tidytext)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(wordcloud)
+library(RColorBrewer)
+library(textdata)
+library(plotly)
+library(ggplot2)
+library(visNetwork)
+library(crosstalk)
+library(GGally)
+
+## Data for assignment 1
+OneTwo <- read_lines("OneTwo.txt")
+Five <- read_lines("Five.txt")
+
+
+## Data for assignment 2
+olive <- read.csv("olive.csv")
+olive <- olive %>% select(-X)
+
+# Region names
+olive <- olive %>% mutate(Region = case_when(Region==1 ~ "North",
+                                     Region==2 ~ "South",
+                                     Region==3 ~ "Sardinia island"))
+```
+
+
+## Assignment 1
+### 1.1
+In word clouds, the size of the words corresponds to how often a word is mentioned.
+```{r, echo=FALSE}
+# Create textFrames
+# Bad reviews
+textFrameB <- tibble(text=OneTwo) %>% mutate(line = row_number())
+textFrameG <- tibble(text=Five) %>% mutate(line = row_number())
+
+WordCloud <- function(textframe){
+  pal <- brewer.pal(6,"Dark2")
+  tidy_frame <- textframe %>%
+    unnest_tokens(word, text) %>%
+    anti_join(stop_words) %>%
+    count(word) %>%
+    with(wordcloud(word, n, max.words = 100, colors=pal, random.order=F))
+}
+```
+
+#### **Good reviews**
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Good reviews
+WordCloud(textFrameG)
+```
+
+For the good reviews, the words *watch*, *casio*, *time* and *price* are the largest and are therefore the most mentioned.
+
+#### **Bad reviews**
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Bad reviews
+WordCloud(textFrameB)
+```
+
+For the bad reviews, *watch*, *casio*, *time*, *amazon* and *months* are the largest (i.e most mentioned) words.
+
+### 1.2
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Treating 10 lines as separate document
+mean_tf_idf <- function(textframe, num_lines_doc=10){
+  tidy_frame <- textframe %>%
+    unnest_tokens(word, text)%>%
+    mutate(line1=floor(line/num_lines_doc))%>%
+    count(line1,word, sort=TRUE) %>%
+    bind_tf_idf(word, line1, n)
+  
+  # Calculates mean of tf-idf by words
+  mean_tf_idf <- aggregate(x = tidy_frame$tf_idf,
+                           by=list(word=tidy_frame$word), FUN=mean)
+  colnames(mean_tf_idf)[2]<-"n"
+  
+  # word cloud plot
+  pal <- brewer.pal(6,"Dark2")
+  mean_tf_idf %>%
+    with(wordcloud(word, n, max.words = 100, colors=pal, random.order=F))
+}
+
+mean_tf_idf(textFrameB)
+```
+
+In this word cloud, the largest words is *could*, *bad*, *luminesence*, *shockingly*, *actual*, *loud*, *perfect* and *hour*. By comparing it to the graphs in assignment 1.1, the most common words from these two graphs are not found.
+
+Due to the TF-IDF function, when the frequency of words in all documents gets a value equal to the number of documents it will result in zero. If the value is larger than the number of documents, then it turns negative. For the higher number less than the number of documents the logarithmic function becomes smaller, which is later multiplied by the frequency of words. Therefore, the word “watch” cannot be found in the word clouds as it is one of the most frequent words. This could also be the case with the other frequently mentioned words in the plots from 1.1.
+
+
+### 1.3
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Sentiment_func <- function(textframe, sentiment="afinn", num_lines_doc=5){
+  #Sentiments
+  #get_sentiments(sentiment)
+  
+  tidy_frame <- textframe %>%
+    unnest_tokens(word, text)%>%
+    left_join(get_sentiments(sentiment))%>%
+    mutate(line1=floor(line/num_lines_doc))%>%
+    group_by(line1, sort=TRUE)%>%
+    summarize(Sentiment=sum(value, na.rm = T))
+  
+  plot_ly(tidy_frame, x=~line1, y=~Sentiment) %>% add_bars()
+}
+```
+
+#### **Good reviews**
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Good reviews
+Sentiment_func(textFrameG)
+```
+
+#### **Bad reviews**
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Bad reviews
+Sentiment_func(textFrameB)
+```
+
+The chunks for the bad reviews seem to have lower sentiment values with a peak of 29, in addition, some are also negative with the lowest value at -22. The chunks for the good reviews have only positive numbers with the smallest sentiment value of 1 and the highest of 60.
+
+The sentiment analysis shows a clear connection for the good reviews, where all chunks have a positive sentiment value.
+For the bad reviews, most of the chunks are positive while for the negative values only one has a significantly large negative value. This does not correspond to the reviews that were expected. 
+
+### 1.4
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+phraseNet=function(text, connectors){
+  textFrame=tibble(text=paste(text, collapse=" "))
+  tidy_frame3=textFrame%>%unnest_tokens(word, text, token="ngrams", n=3)
+  tidy_frame3
+  tidy_frame_sep=tidy_frame3%>%separate(word, c("word1", "word2", "word3"), sep=" ")
+  
+  #SELECT SEPARATION WORDS HERE: now "is"/"are"
+  tidy_frame_filtered=tidy_frame_sep%>%
+    filter(word2 %in% connectors)%>%
+    filter(!word1 %in% stop_words$word)%>%
+    filter(!word3 %in% stop_words$word)
+  tidy_frame_filtered
+  
+  edges=tidy_frame_filtered%>%count(word1,word3, sort = T)%>%
+    rename(from=word1, to=word3, width=n)%>%
+    mutate(arrows="to")
+  
+  right_words=edges%>%count(word=to, wt=width)
+  left_words=edges%>%count(word=from, wt=width)
+  
+  #Computing node sizes and in/out degrees, colors.
+  nodes=left_words%>%full_join(right_words, by="word", values_fill = 0)%>%
+    replace_na(list(n.x=0, n.y=0))%>%
+    mutate(n.total=n.x+n.y)%>%
+    mutate(n.out=n.x-n.y)%>%
+    mutate(id=word, color=brewer.pal(9, "Blues")[cut_interval(n.out,9)],  font.size=40)%>%
+    rename(label=word, value=n.total)
+  
+  #FILTERING edges with no further connections - can be commented
+  edges=edges%>%left_join(nodes, c("from"= "id"))%>%
+    left_join(nodes, c("to"="id"))%>%
+    filter(value.x>1|value.y>1)%>%select(from,to,width,arrows)
+  
+  nodes=nodes%>%filter(id %in% edges$from |id %in% edges$to )
+  
+  visNetwork(nodes,edges)
+  
+}
+```
+
+#### **Good reviews**
+- am, is, are, was, were
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Good reviews
+phraseNet(Five, c("am", "is", "are", "was", "were"))
+```
+- at
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+phraseNet(Five, c("at"))
+```
+
+#### **Bad reviews**
+- am, is, are, was, were
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Bad reviews
+phraseNet(OneTwo, c("am", "is", "are", "was", "were"))
+```
+- at
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+phraseNet(OneTwo, c("at"))
+```
+
+### 1.5
+**Q:** Which properties of this watch are mentioned mostly often?
+
+The most mentioned properties are durable, rated, and defective.
+
+**Q:** What are satisfied customers talking about?
+
+For good reviews, the watch is huge, simple, durable, rated, awesome, unbeatable and has durable materials. The markers, displays, dial and functions are easy. It is also readable and viewable at night.
+
+**Q:** What are unsatisfied customers talking about?
+
+For the bad reviews, unsatisfied customers talk about the watch being defective, hot, stuck and exposed. The display is also useless and blank. The alarm is defective and it is lousy and terrible at keeping.
+
+
+**Q:** What are properties of the watch mentioned by both groups?
+
+The words *night* and *display*  are mentioned in both groups.
+
+**Q:** Can you understand watch characteristics (like size of display, features of the watches) by observing these graphs?
+
+The watch seems to have good functions, markers, dial, durable materials, is simple, has exact time, be huge.  It also seems to have a bad alarm. The characteristics such as the display at night are mentioned both in good and bad reviews and it is therefore hard to conclude this characteristic.
+
+
+## Assignment 2
+### 2.1
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+olive %>%
+  plot_ly(x=~eicosenoic, y=~linoleic) %>%
+  add_markers(color = I("black"))
+```
+
+The observations with low values for eicosenoic are between 1-3.
+
+### 2.2
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Shared data object
+d <- SharedData$new(olive)
+
+# Scatterplot
+eic_lin_scatter <- plot_ly(d, x=~eicosenoic, y=~linoleic) %>%
+  add_markers(color = I("black")) %>%
+  layout(title="Eicosenoic vs Linoleic")
+
+# Barplot
+eic_lin_bar <- plot_ly(d, x=~as.factor(Region)) %>%
+  add_histogram() %>%
+  layout(barmode="overlay", xaxis = list(title="Region"))
+  
+bscols(widths=c(4, NA), filter_slider("stearic", "Stearic", d, ~stearic)
+       ,subplot(eic_lin_scatter,eic_lin_bar) %>%
+         highlight(on="plotly_click", dynamic=T, persistent = T) %>%
+         hide_legend())
+```
+
+By brushing the low eicosenoic values, they correspond to regions such as *Sardinia Island* and *South*. 
+
+For filtering, the low economic values start at around 170 of Stearic and end at around 350.
+By selecting only high values of stearic (above 274) it is now possible to see that only the areas north and Sardina island is left. This is because there are no oils with a value above 274 of stearic in the south.
+
+In this plot selection, connection and filtering operators are shown.
+
+
+### 2.3
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Shared data object
+d3 <- SharedData$new(olive)
+
+# Scatterplot 1
+eic_lin_scatter <- plot_ly(d3, x=~eicosenoic, y=~linoleic) %>%
+  add_markers(color = I("black")) %>%
+  layout(title="Eicosenoic vs Linoleic")
+
+# Scatterplot 2
+ara_lin_scatter <- plot_ly(d3, x=~arachidic, y=~linolenic) %>%
+  add_markers(color = I("black")) %>%
+  layout(title="Arachidic vs Linolenic")
+
+bscols(subplot(eic_lin_scatter,ara_lin_scatter, titleY = TRUE, titleX=TRUE) %>%
+         layout(title="") %>%
+  highlight(on="plotly_select", dynamic=T, persistent=T, opacityDim = I(1)) %>% 
+  hide_legend())
+
+```
+
+Outliers in (linolenic, arachidic) seem to be observations with low values of linolenic (below 12) and arachidic (below 30), and a few with very high values of linolenic(above 60) and arachidic (above 100). Most of these observations also have a low value of eicosenoic. Therefore, there seems to be a connection between the outliers in the two graphs.
+
+### 2.4
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p <- ggparcoord(olive, columns = c(3:10))
+
+d <- plotly_data(ggplotly(p))%>%group_by(.ID)
+d1 <- SharedData$new(d, ~.ID, group="acid")
+p1 <- plot_ly(d1, x=~variable, y=~value) %>%
+  add_lines(line=list(width=0.3))%>%
+  add_markers(marker=list(size=0.3),
+              text=~.ID, hoverinfo="text")
+
+olive2=olive
+olive2$.ID=1:nrow(olive)
+d2 <- SharedData$new(olive2, ~.ID, group="acid")
+
+ButtonsX=list()
+for (i in 3:10){
+  ButtonsX[[i-2]]= list(method = "restyle",
+                        args = list( "x", list(olive2[[i]])),
+                        label = colnames(olive2)[i])
+}
+
+ButtonsY=list()
+for (i in 3:10){
+  ButtonsY[[i-2]]= list(method = "restyle",
+                        args = list( "y", list(olive2[[i]])),
+                        label = colnames(olive2)[i])
+}
+
+ButtonsZ=list()
+for (i in 3:10){
+  ButtonsZ[[i-2]]= list(method = "restyle",
+                        args = list( "z", list(olive2[[i]])),
+                        label = colnames(olive2)[i])
+}
+
+
+p3 <- plot_ly(d2,x=~palmitic,y=~palmitoleic,z=~stearic) %>% add_markers() %>%
+  layout(scene=list(xaxis=list(title=""), yaxis=list(title=""), xasis=list(title="")),
+         title = "",
+         updatemenus = list(
+           list(y=0.9, buttons = ButtonsX),
+           list(y=0.6, buttons = ButtonsY),
+           list(y=0.3, buttons = ButtonsZ)
+         )  )
+
+p4 <-  plot_ly(d2, x=~as.factor(Region)) %>% add_histogram() %>%
+  layout(barmode="overlay", xaxis = list(title="Region"))
+
+bscols(p1%>%highlight(on="plotly_select", dynamic=T, persistent = T, opacityDim = I(1)) %>%
+         hide_legend(),
+       p3%>%highlight(on="plotly_click", dynamic=T, persistent = T)%>%
+         hide_legend(),
+       p4%>%highlight(on="plotly_click", dynamic=T, persistent = T))
+```
+
+By coloring the regions into different colors, the *oleic*, *linolenic* and *arachidic* were easiest to differentiate each region, as they seem to have similar values for those variables. Without coloring, it can be hard to perceive the clusters in a parallel coordinate plot. The most visible cluster is for the *south* region, but the other regions follow some type of pattern. By choosing these three variables in drop boxes, the clusters of each region can be identified.
+
+### 2.5
+For question 4, four interaction operators were applied. A navigation operator was used in a 3d-scatter plot in rotating and zooming, which corresponds to data value space.
+The selection and connecting operator was used for highlighting the linked views in the graphs. This corresponded to attribute space and screen space. Lastly, the reconfiguring operator was used to change the aesthetics of the 3d-scatter plot, which corresponded to the drop boxes and data value space.
+
+In order to make the visualization more efficient/flexible filtering in data, value space could be used. It will enable the user to experiment with different variable values and make a deeper analysis of the corresponding regions. Other strategies would be to use reconfiguring in data value space to find a cluster by reordering the parallel coordinate diagram.
+
+A strategy to find which regions different oils comes from based on the level of acids could be to find clusters in the parallel coordinate diagram by selecting values of the acid variables. After this, additional points could be marked in the 3d plot if they appear to be close, then the barplot could be studied to find which regions different oils come from.
+
+
+
+## Appendix
+```{r, eval=FALSE}
+# Setup ####
+# Packages
+library(tidytext)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(wordcloud)
+library(RColorBrewer)
+library(textdata)
+library(plotly)
+library(ggplot2)
+library(visNetwork)
+library(crosstalk)
+library(GGally)
+
+## Data for assignment 1
+OneTwo <- read_lines("OneTwo.txt")
+Five <- read_lines("Five.txt")
+
+
+## Data for assignment 2
+olive <- read.csv("olive.csv")
+olive <- olive %>% select(-X)
+
+# Region names
+olive <- olive %>% mutate(Region = case_when(Region==1 ~ "North",
+                                     Region==2 ~ "South",
+                                     Region==3 ~ "Sardinia island"))
+
+# Assignment 1 ####
+# 1.1 ####
+# Create textFrames
+# Bad reviews
+textFrameB <- tibble(text=OneTwo) %>% mutate(line = row_number())
+textFrameG <- tibble(text=Five) %>% mutate(line = row_number())
+
+WordCloud <- function(textframe){
+  pal <- brewer.pal(6,"Dark2")
+  tidy_frame <- textframe %>%
+    unnest_tokens(word, text) %>%
+    anti_join(stop_words) %>%
+    count(word) %>%
+    with(wordcloud(word, n, max.words = 100, colors=pal, random.order=F))
+}
+
+# Bad reviews
+WordCloud(textFrameB)
+
+# Good reviews
+WordCloud(textFrameG)
+
+
+
+# 1.2 ####
+# Treating 10 lines as separate document
+mean_tf_idf <- function(textframe, num_lines_doc=10){
+  tidy_frame <- textframe %>%
+    unnest_tokens(word, text)%>%
+    mutate(line1=floor(line/num_lines_doc))%>%
+    count(line1,word, sort=TRUE) %>%
+    bind_tf_idf(word, line1, n)
+  
+  # Calculates mean of tf-idf by words
+  mean_tf_idf <- aggregate(x = tidy_frame$tf_idf,
+                           by=list(word=tidy_frame$word), FUN=mean)
+  colnames(mean_tf_idf)[2]<-"n"
+  
+  # word cloud plot
+  pal <- brewer.pal(6,"Dark2")
+  mean_tf_idf %>%
+    with(wordcloud(word, n, max.words = 100, colors=pal, random.order=F))
+}
+
+mean_tf_idf(textFrameB)
+
+
+
+
+# 1.3 ####
+Sentiment_func <- function(textframe, sentiment="afinn", num_lines_doc=5){
+  #Sentiments
+  get_sentiments(sentiment)
+  
+  tidy_frame <- textframe %>%
+    unnest_tokens(word, text)%>%
+    left_join(get_sentiments(sentiment))%>%
+    mutate(line1=floor(line/num_lines_doc))%>%
+    group_by(line1, sort=TRUE)%>%
+    summarize(Sentiment=sum(value, na.rm = T))
+  
+  plot_ly(tidy_frame, x=~line1, y=~Sentiment) %>% add_bars()
+}
+
+
+# Bad reviews
+Sentiment_func(textFrameB)
+
+# Good reviews
+Sentiment_func(textFrameG)
+
+
+
+# 1.4 ####
+phraseNet=function(text, connectors){
+  textFrame=tibble(text=paste(text, collapse=" "))
+  tidy_frame3=textFrame%>%unnest_tokens(word, text, token="ngrams", n=3)
+  tidy_frame3
+  tidy_frame_sep=tidy_frame3%>%separate(word, c("word1", "word2", "word3"), sep=" ")
+  
+  #SELECT SEPARATION WORDS HERE: now "is"/"are"
+  tidy_frame_filtered=tidy_frame_sep%>%
+    filter(word2 %in% connectors)%>%
+    filter(!word1 %in% stop_words$word)%>%
+    filter(!word3 %in% stop_words$word)
+  tidy_frame_filtered
+  
+  edges=tidy_frame_filtered%>%count(word1,word3, sort = T)%>%
+    rename(from=word1, to=word3, width=n)%>%
+    mutate(arrows="to")
+  
+  right_words=edges%>%count(word=to, wt=width)
+  left_words=edges%>%count(word=from, wt=width)
+  
+  #Computing node sizes and in/out degrees, colors.
+  nodes=left_words%>%full_join(right_words, by="word", values_fill = 0)%>%
+    replace_na(list(n.x=0, n.y=0))%>%
+    mutate(n.total=n.x+n.y)%>%
+    mutate(n.out=n.x-n.y)%>%
+    mutate(id=word, color=brewer.pal(9, "Blues")[cut_interval(n.out,9)],  font.size=40)%>%
+    rename(label=word, value=n.total)
+  
+  #FILTERING edges with no further connections - can be commented
+  edges=edges%>%left_join(nodes, c("from"= "id"))%>%
+    left_join(nodes, c("to"="id"))%>%
+    filter(value.x>1|value.y>1)%>%select(from,to,width,arrows)
+  
+  nodes=nodes%>%filter(id %in% edges$from |id %in% edges$to )
+  
+  visNetwork(nodes,edges)
+  
+}
+
+# Bad reviews
+phraseNet(OneTwo, c("am", "is", "are", "was", "were"))
+phraseNet(OneTwo, c("at"))
+
+# Good reviews
+phraseNet(Five, c("am", "is", "are", "was", "were"))
+phraseNet(Five, c("at"))
+
+
+
+# 2.1 ####
+olive %>%
+  plot_ly(x=~eicosenoic, y=~linoleic) %>%
+  add_markers(color = I("black"))
+
+
+# 2.2 ####
+# Shared data object
+d <- SharedData$new(olive)
+
+# Scatterplot
+eic_lin_scatter <- plot_ly(d, x=~eicosenoic, y=~linoleic) %>%
+  add_markers(color = I("black")) %>%
+  layout(title="Eicosenoic vs Linoleic")
+
+# Barplot
+eic_lin_bar <- plot_ly(d, x=~as.factor(Region)) %>%
+  add_histogram() %>%
+  layout(barmode="overlay", xaxis = list(title="Region"))
+  
+bscols(widths=c(4, NA), filter_slider("stearic", "Stearic", d, ~stearic)
+       ,subplot(eic_lin_scatter,eic_lin_bar) %>%
+         highlight(on="plotly_select", dynamic=T, persistent = T) %>%
+         hide_legend())
+
+# 2.3 ####
+# Shared data object
+d3 <- SharedData$new(olive)
+
+# Scatterplot 1
+eic_lin_scatter <- plot_ly(d3, x=~eicosenoic, y=~linoleic) %>%
+  add_markers(color = I("black")) %>%
+  layout(title="Eicosenoic vs Linoleic")
+
+# Scatterplot 2
+ara_lin_scatter <- plot_ly(d3, x=~arachidic, y=~linolenic) %>%
+  add_markers(color = I("black")) %>%
+  layout(title="Arachidic vs Linolenic")
+
+bscols(subplot(eic_lin_scatter,ara_lin_scatter, titleY = TRUE, titleX=TRUE) %>%
+         layout(title="") %>%
+  highlight(on="plotly_select", dynamic=T, persistent=T, opacityDim = I(1)) %>% 
+  hide_legend())
+
+# 2.4 ####
+p <- ggparcoord(olive, columns = c(3:10))
+
+d <- plotly_data(ggplotly(p))%>%group_by(.ID)
+d1 <- SharedData$new(d, ~.ID, group="acid")
+p1 <- plot_ly(d1, x=~variable, y=~value) %>%
+  add_lines(line=list(width=0.3))%>%
+  add_markers(marker=list(size=0.3),
+              text=~.ID, hoverinfo="text")
+
+olive2=olive
+olive2$.ID=1:nrow(olive)
+d2 <- SharedData$new(olive2, ~.ID, group="acid")
+
+ButtonsX=list()
+for (i in 3:10){
+  ButtonsX[[i-2]]= list(method = "restyle",
+                        args = list( "x", list(olive2[[i]])),
+                        label = colnames(olive2)[i])
+}
+
+ButtonsY=list()
+for (i in 3:10){
+  ButtonsY[[i-2]]= list(method = "restyle",
+                        args = list( "y", list(olive2[[i]])),
+                        label = colnames(olive2)[i])
+}
+
+ButtonsZ=list()
+for (i in 3:10){
+  ButtonsZ[[i-2]]= list(method = "restyle",
+                        args = list( "z", list(olive2[[i]])),
+                        label = colnames(olive2)[i])
+}
+
+
+p3 <- plot_ly(d2,x=~palmitic,y=~palmitoleic,z=~stearic) %>% add_markers() %>%
+  layout(scene=list(xaxis=list(title=""), yaxis=list(title=""), xasis=list(title="")),
+         title = "",
+         updatemenus = list(
+           list(y=0.9, buttons = ButtonsX),
+           list(y=0.6, buttons = ButtonsY),
+           list(y=0.3, buttons = ButtonsZ)
+         )  )
+
+p4 <-  plot_ly(d2, x=~as.factor(Region)) %>% add_histogram() %>%
+  layout(barmode="overlay", xaxis = list(title="Region"))
+
+bscols(p1%>%highlight(on="plotly_select", dynamic=T, persistent = T, opacityDim = I(1)) %>%
+         hide_legend(),
+       p3%>%highlight(on="plotly_click", dynamic=T, persistent = T)%>%
+         hide_legend(),
+       p4%>%highlight(on="plotly_click", dynamic=T, persistent = T))
+```
+

@@ -1,0 +1,317 @@
+---
+title: "Lab 2 - Visualization"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fig_width: 7.5
+    fig_height: 5
+---
+```{r include=FALSE}
+# Setup ####
+library(ggplot2)
+library(plotly)
+library(readxl)
+library(MASS)
+olive <- read.csv("olive.csv", row.names=1, header=TRUE)
+```
+
+
+## Assignment 1
+### 1.1
+```{r echo=FALSE}
+ggplot(olive, aes(x=palmitic, y=oleic, color = linoleic)) +
+  geom_point() +
+  labs(color = "Linoleic")
+```
+
+```{r echo=FALSE}
+ggplot(olive, aes(x=palmitic, y=oleic, color = cut_interval(linoleic, n = 4))) +
+  geom_point() +
+  labs(color = "Linoleic")
+```
+
+For the first graph, where the colors are continuous, it can be hard to see the difference between each point. The difference is clearer when the points are divided into groups. The downside of dividing the data into groups is the loss of information in the data. For example, it is not possible to differentiate 448 and 704 since they are in the same group.
+
+The demonstrated graphs show the priority of preattentive features, where the intensity of the color is harder to differentiate than different hue colors, which may require the user to use an attentive mechanism. Although to see a boundary between the different clusters, an attentive mechanism is necessary.
+
+### 1.2
+```{r echo=FALSE}
+# a)
+ggplot(olive, aes(x=palmitic, y=oleic, color = cut_interval(linoleic, n = 4)))+
+  geom_point()+
+  labs(color = "Linoleic")
+```
+
+```{r echo=FALSE, warning=FALSE}
+# b)
+ggplot(olive, aes(x=palmitic, y=oleic, size = cut_interval(linoleic, n = 4)))+
+  geom_point()+
+  labs(size= "Linoleic")
+```
+
+```{r echo=FALSE}
+# c)
+ggplot(olive, aes(x=palmitic, y=oleic, angle=as.numeric(cut_interval(linoleic, n = 4))))+
+  geom_point()+
+  geom_spoke(radius = 30, show.legend=TRUE)
+```
+
+It is hard to differentiate between the categories in graphs corresponding to size and orientation angle as their features are similar. In addition, the graphs are also overplotted, making it impossible to differentiate observations. The conclusion does not fully align with the perception metrics. Hue should be easiest to differentiate (at 3.1 bits), then line orientation (at 3.0 bits), and last size (at 2.2 bits).
+
+### 1.3
+```{r echo=FALSE}
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=Region))+
+  geom_point()+
+  labs(color= "Region")
+```
+
+The problem with this plot is that the variable *Region* is a discrete variable, but it is displayed as a numeric variable. Therefore the plot gives the illusion that regions between natural numbers exist.
+
+```{r echo=FALSE}
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=as.factor(Region)))+
+  geom_point()+
+  labs(color= "Region")
+```
+
+When Region is a categorical variable the clusters can be instantly perceived. This is due to the preattentive mechanism.
+
+### 1.4
+```{r echo=FALSE, warning=FALSE}
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=cut_interval(linoleic, n = 3), shape=cut_interval(palmitic, n = 3),
+                  size = cut_interval(palmitoleic, n = 3)))+
+  geom_point()+
+  labs(color= "Linoleic", shape = "Palmitic", size="Palmitoleic")
+```
+
+Linoleic can be easier perceived because of a preattentive mechanism. Some points in the middle are overplotted, which makes it hard to differentiate between size and figure. Although, additional features make it hard to differentiate between the observations due to channel capacity. This graph demonstrates that the combining metrics do not sum up to the channel capacity, which requires the attentive mechanism to see a structure in the observations. 
+
+### 1.5
+```{r echo=FALSE, warning=FALSE}
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=as.factor(Region), shape=cut_interval(palmitic, n = 3),
+                  size = cut_interval(palmitoleic, n = 3)))+
+  geom_point()+
+  labs(color= "Region", shape = "Palmitic", size="Palmitoleic")
+```
+
+There are boundaries between each region, which can be easier to preattentively perceive the difference. This is an example of Treisman's theory, where the figure is processed in parallel by checking individual feature maps. The hue is the specific preattentive task, which combines with other feature maps and requires attentive mechanisms. Because even if it is hard to differentiate the observations due to the number of aesthetics the regions are still easily differentiable due to the distribution of data. That is why the other aesthetics are harder to compare and take more time.
+
+### 1.6
+```{r echo=FALSE}
+tmp_data <- olive %>% group_by(Region)
+tmp_freq <- data.frame(table(olive$Area))
+colnames(tmp_freq) <- c("Area", "Frequency")
+plot_ly(tmp_freq, labels=~Area, values=~Frequency, type="pie") %>% layout(showlegend=FALSE)
+```
+
+The problem with this graph is that it is hard to instantly understand which slice corresponds to which Area. At the same time, it is also hard to differentiate the size of each slice without looking at the percentages.
+
+### 1.7
+```{r echo=FALSE}
+ggplot(olive, aes(x=linoleic, y=eicosenoic))+
+  geom_density_2d()
+```
+
+```{r echo=FALSE}
+ggplot(olive, aes(x=linoleic, y=eicosenoic))+
+  geom_point()
+```
+
+The lower left bottom shows that it is high density at the lower left of the figure. But in the scatter plot the points are nonexistent. This makes the density graph misleading.
+
+## Assignment 2
+### 2.1
+```{r eval=FALSE}
+baseball_df <- read_excel("baseball-2016.xlsx")
+```
+
+```{r include=FALSE}
+baseball_df <- read_excel("baseball-2016.xlsx")
+```
+
+It is essential to scale the data before performing MDS to ensure that the variables' range doesn't impact the result of the scaling.
+
+### 2.2
+```{r include=FALSE, warning=FALSE}
+baseball_numeric <- scale(baseball_df[,3:28])        # Numeric variables in data
+d <- dist(baseball_numeric, method="minkowski", p=2) # Distance matrix
+res <- isoMDS(d, k=2)                                # MDS result
+coords <- res$points                                 # Coordinates for new dimentions
+
+coordsMDS <- as.data.frame(coords)                   # Save coordinates as data.frame
+coordsMDS$Team <- baseball_df$Team                   # Add variable 'team' to the coords-data
+coordsMDS$League <- baseball_df$League               # Add variable 'league' to the coords-data
+```
+
+```{r echo=FALSE, warning=FALSE}
+plot_ly(data=coordsMDS, x=~V1, y=~V2, type="scatter", mode="markers", hovertext=~Team, color=~League)
+
+```
+
+It seems to be a vague difference between the leagues. The NL league has a wide spread on both V1 and V2. Meanwhile, the AL league tends to be close to origo and in the upper left corner (higher values of V1 and V2).
+
+The V2 component seems to differentiate the two Leagues the best. Eight of the NL teams are below V2=-1.2, and six are above. No good limit was found for the V1 variable since the two leagues are mixed.
+
+Only the Boston Red Socks could be seen as a clear outlier. 
+
+
+### 2.3
+```{r echo=FALSE}
+sh <- Shepard(d, coords)
+delta <-as.numeric(d)
+D <- as.numeric(dist(coords))
+
+n <- nrow(coords)
+index <- matrix(1:n, nrow=n, ncol=n)
+index1 <- as.numeric(index[lower.tri(index)])
+
+n <- nrow(coords)
+index <- matrix(1:n, nrow=n, ncol=n, byrow = T)
+index2 <- as.numeric(index[lower.tri(index)])
+
+plot_ly()%>%
+  add_markers(x=~delta, y=~D, hoverinfo = 'text',
+              text = ~paste('Obj1: ', baseball_df$Team[index1],
+                            '<br> Obj 2: ', baseball_df$Team[index2]))%>%
+  #if nonmetric MDS inolved
+  add_lines(x=~sh$x, y=~sh$yf)
+```
+
+(Minnesota Twins, Arizona Diamondbacks), (Oakland Athletics, Milwaukee Brewers) and (NY Mets, Minnesota Twins) were the hardest for MDS to map.
+
+### 2.4
+```{r echo=FALSE}
+data2_4 <- cbind(baseball_numeric, coordsMDS[,1:2])
+ggplot(data2_4, aes_string(y=as.name("3B"), x="V2")) + geom_point()
+
+```
+
+
+```{r echo=FALSE}
+ggplot(data2_4, aes_string(y=as.name("HR"), x="V2")) + geom_point()
+```
+
+Both home runs (HR) and triple (3B) seem important to score as 3B gives three runs, and HR gives four runs. It was hard to conclude what variation the MDS variable explained. One could argue that V2 explains the team's ability to perform since it has a positive correlation with HR. However, it also has a negative correlation with 3B, which is good for scoring. This could mean that V2 is explaining a strategy instead, a strategy of aiming for HR.
+
+## Appendix
+```{r eval=FALSE}
+# Setup ####
+library(ggplot2)
+library(plotly)
+library(readxl)
+library(MASS)
+olive <- read.csv("olive.csv", row.names=1, header=TRUE)
+
+# Assignment 1 ###
+# 1.1
+ggplot(olive, aes(x=palmitic, y=oleic, color = linoleic)) +
+  geom_point() +
+  labs(color = "Linoleic")
+
+ggplot(olive, aes(x=palmitic, y=oleic, color = cut_interval(linoleic, n = 4))) +
+  geom_point() +
+  labs(color = "Linoleic")
+
+# 1.2
+# 1.2 a  
+ggplot(olive, aes(x=palmitic, y=oleic, color = cut_interval(linoleic, n = 4)))+
+  geom_point()+
+  labs(color = "Linoleic")
+
+# 1.2 b
+ggplot(olive, aes(x=palmitic, y=oleic, size = cut_interval(linoleic, n = 4)))+
+  geom_point()+
+  labs(size= "Linoleic")
+
+# 1.2 c  
+ggplot(olive, aes(x=palmitic, y=oleic, angle=as.numeric(cut_interval(linoleic, n = 4))))+
+  geom_point()+
+  geom_spoke(radius = 30, show.legend=TRUE)
+
+# 1.3
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=Region))+
+  geom_point()+
+  labs(color= "Region")
+
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=as.factor(Region)))+
+  geom_point()+
+  labs(color= "Region")
+
+# 1.4
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=cut_interval(linoleic, n = 3), shape=cut_interval(palmitic, n = 3),
+                  size = cut_interval(palmitoleic, n = 3)))+
+  geom_point()+
+  labs(color= "Linoleic", shape = "Palmitic", size="Palmitoleic")
+
+# 1.5 
+ggplot(olive, aes(x=eicosenoic, y=oleic, color=as.factor(Region), shape=cut_interval(palmitic, n = 3),
+                  size = cut_interval(palmitoleic, n = 3)))+
+  geom_point()+
+  labs(color= "Region", shape = "Palmitic", size="Palmitoleic")
+
+# 1.6 
+tmp_data <- olive %>% group_by(Region)
+tmp_freq <- data.frame(table(olive$Area))
+colnames(tmp_freq) <- c("Area", "Frequency")
+plot_ly(tmp_freq, labels=~Area, values=~Frequency, type="pie") %>% layout(showlegend=FALSE)
+
+# 1.7
+ggplot(olive, aes(x=linoleic, y=eicosenoic))+
+  geom_density_2d()
+
+ggplot(olive, aes(x=linoleic, y=eicosenoic))+
+  geom_point()
+
+# 2.1
+baseball_df <- read_excel("baseball-2016.xlsx")
+
+
+# 2.2 
+baseball_numeric <- scale(baseball_df[,3:28])        # Numeric variables in data
+d <- dist(baseball_numeric, method="minkowski", p=2) # Distance matrix
+res <- isoMDS(d, k=2)                                # MDS result
+coords <- res$points                                 # Coordinates for new dimentions
+
+coordsMDS <- as.data.frame(coords)                   # Save coordinates as data.frame
+coordsMDS$Team <- baseball_df$Team                   # Add variable 'team' to the coords-data
+coordsMDS$League <- baseball_df$League               # Add variable 'league' to the coords-data
+
+plot_ly(data=coordsMDS, x=~V1, y=~V2, type="scatter", mode="markers", hovertext=~Team, color=~League)
+
+# 2.3
+sh <- Shepard(d, coords)
+delta <-as.numeric(d)
+D <- as.numeric(dist(coords))
+
+n <- nrow(coords)
+index <- matrix(1:n, nrow=n, ncol=n)
+index1 <- as.numeric(index[lower.tri(index)])
+
+n <- nrow(coords)
+index <- matrix(1:n, nrow=n, ncol=n, byrow = T)
+index2 <- as.numeric(index[lower.tri(index)])
+
+
+
+plot_ly()%>%
+  add_markers(x=~delta, y=~D, hoverinfo = 'text',
+              text = ~paste('Obj1: ', baseball_df$Team[index1],
+                            '<br> Obj 2: ', baseball_df$Team[index2]))%>%
+  #if nonmetric MDS inolved
+  add_lines(x=~sh$x, y=~sh$yf)
+
+# 2.4
+# Plotting all numeric values and V2
+data2_4 <- cbind(baseball_numeric, coordsMDS[,1:2])
+var_names <- colnames(baseball_numeric)
+for (i in 1:ncol(baseball_numeric)) {
+  var <- as.name(var_names[i])
+  X <- "V2"
+  p <- ggplot(data2_4, aes_string(y=var, x=X)) + geom_point()
+  print(p)
+}
+
+ggplot(data2_4, aes_string(y=as.name("3B"), x="V2")) + geom_point()
+ggplot(data2_4, aes_string(y=as.name("HR"), x="V2")) + geom_point()
+
+```
+
